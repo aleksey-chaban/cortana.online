@@ -153,22 +153,6 @@ def decode_prefill_ids(
         return tokenizer.decode(prefill_ids, **decode_kwargs)
 
 
-def make_mlx_sampler(
-        temp: float,
-        top_p: float
-    ):
-    """
-    Format temperature and top-p parameters
-    """
-
-    try:
-        return mlx_lm.sample_utils.make_sampler(temp=temp, top_p=top_p)
-
-    except TypeError:
-        # Fallback for versions that prefer positional args
-        return mlx_lm.sample_utils.make_sampler(temp, top_p)
-
-
 def entry_to_dict(
         entry: typing.Any
     ) -> dict[str, typing.Any]:
@@ -282,7 +266,10 @@ def run_entry(
 
     model, tokenizer = mlx_lm.load(default_model)
     harmony_prompt = decode_prefill_ids(tokenizer, prefill_ids)
-    sampler = make_mlx_sampler(temperature, top_p)
+    sampler = mlx_lm.sample_utils.make_sampler(
+        temp=temperature,
+        top_p=top_p
+    )
 
     completion_ids: list[int] = []
 
