@@ -1,6 +1,5 @@
 """Submit entry to model"""
 
-import argparse
 import os
 import json
 import pathlib
@@ -11,118 +10,86 @@ import mlx_lm
 
 import openai_harmony
 
-##
-## Inputs
-##
-
-def parse_args() -> argparse.Namespace:
-    """
-    Parse command-line arguments.
-    """
-
-    parser = argparse.ArgumentParser(
-        description="Submit entry to model."
-    )
-
-    parser.add_argument(
-        "--author",
-        type=str,
-        default=None,
-        help="Source of the entry.",
-    )
-
-    parser.add_argument(
-        "prompt",
-        help="User entry."
-    )
-
-    parser.add_argument(
-        "--settings-true",
-        action="store_true",
-        help="Employ true settings.",
-    )
-
-    parser.add_argument(
-        "--developer-true",
-        action="store_true",
-        help="Employ true developer prompt.",
-    )
-
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=512,
-        help="Maximum number of new tokens to generate.",
-    )
-
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.35,
-        help="Sampling temperature.",
-    )
-
-    parser.add_argument(
-        "--top-p",
-        type=float,
-        default=0.90,
-        help="Top-p nucleus sampling.",
-    )
-
-    return parser.parse_args()
-
-
-##
-## End inputs
-##
 
 ##
 ## Process input
 ##
 
-def build_conversation(
-        system_prompt: openai_harmony.SystemContent,
-        developer_prompt: openai_harmony.DeveloperContent,
-        author: typing.Optional[str],
-        user_prompt: str,
-    ) -> openai_harmony.Conversation:
+def build_presets_conversation(
+        conversation: list,
+        system_entry: openai_harmony.SystemContent,
+        developer_entry: openai_harmony.DeveloperContent,
+    ) -> list:
     """
-    Build a Harmony conversation with system, developer, and user messages.
+    Build Harmony system and developer messages.
     """
 
-    messages = []
-
-    messages.append(
+    conversation.append(
         openai_harmony.Message.from_role_and_content(
             openai_harmony.Role.SYSTEM,
-            system_prompt
+            system_entry
         )
     )
 
-    messages.append(
+    conversation.append(
         openai_harmony.Message.from_role_and_content(
             openai_harmony.Role.DEVELOPER,
-            developer_prompt,
+            developer_entry,
         )
     )
 
-    if author:
-        messages.append(
+    return conversation
+
+
+def build_user_conversation(
+        conversation: list,
+        author: typing.Optional[str],
+        user_entry: str,
+    ) -> list:
+    """
+    Build Harmony user messages.
+    """
+
+    if user_entry:
+        if author:
+            conversation.append(
+                openai_harmony.Message(
+                    author=openai_harmony.Author.new(openai_harmony.Role.USER, author),
+                    content=[openai_harmony.TextContent(text=user_entry)],
+                )
+            )
+
+        else:
+            conversation.append(
+                openai_harmony.Message.from_role_and_content(
+                    openai_harmony.Role.USER,
+                    user_entry
+                )
+            )
+
+    return conversation
+
+
+def build_model_conversation(
+        conversation: list,
+        model_name: str,
+        model_entry: str,
+        model_channel: str,
+    ) -> list:
+    """
+    Build Harmony model messages.
+    """
+
+    if model_channel in ("analysis", "final"):
+        conversation.append(
             openai_harmony.Message(
-                author=openai_harmony.Author.new(openai_harmony.Role.USER, author),
-                content=[openai_harmony.TextContent(text=user_prompt)],
+                author=openai_harmony.Author.new(openai_harmony.Role.ASSISTANT, model_name),
+                channel=model_channel,
+                content=[openai_harmony.TextContent(text=model_entry)],
             )
         )
 
-    else:
-        messages.append(
-            openai_harmony.Message.from_role_and_content(
-                openai_harmony.Role.USER,
-                user_prompt
-            )
-        )
-
-    return openai_harmony.Conversation.from_messages(messages)
+    return conversation
 
 ##
 ## End process input
@@ -134,7 +101,7 @@ def build_conversation(
 
 def decode_prefill_ids(
         tokenizer: typing.Any,
-        prefill_ids: list[int]
+        prefill_ids: list[int],
     ) -> str:
     """
     Decode the Harmony token sequence back into text while preserving special tokens.
@@ -154,7 +121,7 @@ def decode_prefill_ids(
 
 
 def entry_to_dict(
-        entry: typing.Any
+        entry: typing.Any,
     ) -> dict[str, typing.Any]:
     """
     Convert Harmony response to dictionary format
@@ -170,7 +137,7 @@ def entry_to_dict(
 
 
 def extract_text_from_content(
-        content: typing.Any
+        content: typing.Any,
     ) -> list[str]:
     """
     Prepare Harmony output for formatting
@@ -203,47 +170,43 @@ def extract_text_from_content(
 
 
 def extract_model_text(
-        parsed_entries: typing.Iterable[typing.Any]
-    ) -> str:
+        parsed_entries: typing.Iterable[typing.Any],
+    ) -> list:
     """
     Return formatted Harmony output
     """
 
     texts: list[str] = []
-    fallback: list[dict[str, typing.Any]] = []
+    output_list: list[dict[str, typing.Any]] = []
 
     for entry in parsed_entries:
         d = entry_to_dict(entry)
-        fallback.append(d)
+        output_list.append(d)
 
         role = str(d.get("role", "")).lower()
         if role == "assistant":
             texts.extend(extract_text_from_content(d.get("content")))
 
-    cleaned = "\n".join(t.strip() for t in texts if t and t.strip()).strip()
-    if cleaned:
-        return cleaned
-
-    return json.dumps(fallback, indent=2, ensure_ascii=False)
+    return output_list
 
 ##
 ## End process output
 ##
 
 ##
-## Submit entry
+## Process entry
 ##
 
 def run_entry(
-    system_prompt: openai_harmony.SystemContent,
-    developer_prompt: openai_harmony.DeveloperContent,
-    author: typing.Optional[str],
-    prompt: str,
+    system_entry: openai_harmony.SystemContent,
+    developer_entry: openai_harmony.DeveloperContent,
+    memories_entry: dict,
+    entries: list[dict],
     default_model: str,
     max_tokens: int,
     temperature: float,
     top_p: float,
-) -> str:
+) -> list:
     """
     Submit a single query through the model
     """
@@ -252,23 +215,55 @@ def run_entry(
         openai_harmony.HarmonyEncodingName.HARMONY_GPT_OSS
     )
 
-    conversation = build_conversation(
-        system_prompt=system_prompt,
-        developer_prompt=developer_prompt,
-        author=author,
-        user_prompt=prompt,
+    conversation = []
+
+    conversation = build_presets_conversation(
+        conversation=conversation,
+        system_entry=system_entry,
+        developer_entry=developer_entry,
     )
+
+    if memories_entry["content"]:
+        entries = [memories_entry, *entries]
+
+    for entry in entries:
+
+        author = entry.get("author")
+        channel = entry.get("channel")
+        content = entry.get("content")
+
+        if not content:
+            continue
+
+        match channel:
+            case "analysis" | "final":
+                conversation = build_model_conversation(
+                    conversation=conversation,
+                    model_name=default_model,
+                    model_entry=content,
+                    model_channel=channel,
+            )
+            case "user":
+                conversation = build_user_conversation(
+                    conversation=conversation,
+                    author=author,
+                    user_entry=content,
+            )
+
+    conversation = openai_harmony.Conversation.from_messages(conversation)
 
     prefill_ids = encoding.render_conversation_for_completion(
         conversation,
         openai_harmony.Role.ASSISTANT,
     )
 
+    token_count = len(prefill_ids)
+
     model, tokenizer = mlx_lm.load(default_model)
-    harmony_prompt = decode_prefill_ids(tokenizer, prefill_ids)
+    harmony_entry = decode_prefill_ids(tokenizer, prefill_ids)
     sampler = mlx_lm.sample_utils.make_sampler(
         temp=temperature,
-        top_p=top_p
+        top_p=top_p,
     )
 
     completion_ids: list[int] = []
@@ -276,7 +271,7 @@ def run_entry(
     for response in mlx_lm.stream_generate(
         model,
         tokenizer,
-        prompt=harmony_prompt,
+        prompt=harmony_entry,
         max_tokens=max_tokens,
         sampler=sampler,
     ):
@@ -290,22 +285,34 @@ def run_entry(
         openai_harmony.Role.ASSISTANT,
     )
 
-    return extract_model_text(parsed_entries)
+    return [
+        token_count,
+        extract_model_text(parsed_entries)
+    ]
 
 ##
-## End submit entry
+## End process entry
 ##
 
-def main():
+##
+## Submit entry
+##
+
+def submit_entry(
+    entries: list[dict],
+    memories_entry: dict,
+    developer_true: bool = False,
+    settings_true: bool = False,
+    max_tokens: int = 1024,
+    temperature: float = 0.35,
+    top_p: float = 0.90,
+    root: str = os.getcwd(),
+) -> list:
     """
-    Run script
+    Submit entry to the model
     """
 
-    args = parse_args()
-
-    root = os.getcwd()
-
-    if args.settings_true:
+    if settings_true:
         with open(
             os.path.join(
                 root,
@@ -337,21 +344,21 @@ def main():
 
     default_model = str(pathlib.Path(model_location).expanduser())
 
-    system_prompt = openai_harmony.SystemContent(
+    system_entry = openai_harmony.SystemContent(
         model_identity=model_identity,
-        reasoning_effort=openai_harmony.ReasoningEffort.MEDIUM,
+        reasoning_effort=openai_harmony.ReasoningEffort.LOW,
         conversation_start_date=datetime.datetime.now().date().isoformat(),
         knowledge_cutoff=None,
         channel_config=openai_harmony.ChannelConfig.require_channels(["analysis", "final"]),
         tools=None,
     )
 
-    if args.developer_true:
+    if developer_true:
         with open(
             os.path.join(
                 root,
                 "config",
-                "developer_prompt_true.txt"
+                "developer_entry_true.txt"
             ),
             mode="r",
             encoding="utf-8"
@@ -363,37 +370,34 @@ def main():
             os.path.join(
                 root,
                 "config",
-                "developer_prompt.txt"
+                "developer_entry.txt"
             ),
             mode="r",
             encoding="utf-8"
         ) as f:
             developer_instructions = f.read()
 
-    developer_prompt = openai_harmony.DeveloperContent(
+    developer_entry = openai_harmony.DeveloperContent(
         instructions=developer_instructions,
         tools=None,
     )
 
-    if args.author:
-        author = args.author.strip()
-
-    else:
-        author = None
-
-    result = run_entry(
-        system_prompt=system_prompt,
-        developer_prompt=developer_prompt,
-        author=author,
-        prompt=args.prompt,
+    token_count, result = run_entry(
+        system_entry=system_entry,
+        memories_entry=memories_entry,
+        developer_entry=developer_entry,
+        entries=entries,
         default_model=default_model,
-        max_tokens=args.max_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
     )
 
-    print(result)
+    return [
+        token_count,
+        result
+    ]
 
-
-if __name__ == "__main__":
-    main()
+##
+## End submit entry
+##

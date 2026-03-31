@@ -1,8 +1,13 @@
 legacy/
+storage/
+
 logs/*
+
 .DS_Store
-settings_true.json
+developer_entry_true.txt
 developer_prompt_true.txt
+durable_memories*
+settings_true.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
