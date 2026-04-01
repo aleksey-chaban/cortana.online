@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--author",
         type=str,
-        default=None,
+        default="Anonymous",
         help="Source of the entry.",
     )
 

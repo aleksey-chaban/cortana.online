@@ -79,3 +79,8 @@ python3 cli/cli_trial "Hello, world!"
 
 Run the helper script to set up the schema for PostgreSQL
 python3 helpers/helper_database.py
+
+Optionally, modify config/durable_memories-Anonymous.txt
+
+Run the script to receive and store an output
+Python3 cli/cli_entry.py —entry “Hello, world!”

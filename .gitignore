@@ -6,7 +6,7 @@ logs/*
 .DS_Store
 developer_entry_true.txt
 developer_prompt_true.txt
-durable_memories*
+durable_memories-Aleksey Chaban.txt
 helper_database_true.py
 settings_true.json
 *_true.*
