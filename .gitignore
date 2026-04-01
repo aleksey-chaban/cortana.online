@@ -7,7 +7,9 @@ logs/*
 developer_entry_true.txt
 developer_prompt_true.txt
 durable_memories*
+helper_database_true.py
 settings_true.json
+*_true.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
