@@ -9,10 +9,14 @@ import numpy
 
 from app.src.local import model
 from app.src.local import database
+from app.src.local import embedding
+from app.src.helpers import loaders
+from app.src.helpers import transformers
 
 ##
 ## Inputs
 ##
+
 
 def parse_args() -> argparse.Namespace:
     """
@@ -56,13 +60,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=512,
-        help="Maximum number of new tokens to generate.",
-    )
-
-    parser.add_argument(
         "--temperature",
         type=float,
         default=0.35,
@@ -97,6 +94,20 @@ def main():
     args = parse_args()
     root = os.getcwd()
 
+    (
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        return_tokens,
+    ) = loaders.load_paths(
+        settings_true=args.settings_true,
+        root=root,
+    )
+
     config = os.path.join(
         root,
         "config"
@@ -121,12 +132,25 @@ def main():
         except FileNotFoundError:
             sys.exit("Author does not exist.")
 
+    if return_tokens > 512:
+        return_tokens = return_tokens - 256
+
+    durable_memories["content"] = (
+            f"**Please limit your responses to { return_tokens }**\n\n"
+            f"{durable_memories['content']}\n\n"
+        )
+
     entry_dict = {
         "datetime": pandas.Timestamp.now(tz="utc").strftime(datetime_format),
         "author": args.author,
         "channel": "user",
         "type": "text",
         "content": args.entry,
+        "embedding": embedding.main(
+            text=args.entry,
+            settings_true=args.settings_true,
+            root=root,
+        )
     }
 
     entry_df = pandas.DataFrame([entry_dict])
@@ -138,16 +162,59 @@ def main():
             a.author AS author,
             c.channel AS channel,
             ty.type AS type,
-            t.content AS content
+            t.content AS content,
+            e.embedding::text AS embedding
         FROM threads t
         JOIN authors a ON t.author = a.author_id
         JOIN channels c ON t.channel = c.channel_id
         JOIN types ty ON t.type = ty.type_id
-        ORDER BY t.content_id
-        """
+        LEFT JOIN embeddings e ON t.embedding = e.embedding_id
+        ORDER BY t.content_id DESC
+        LIMIT :limit
+        """,
+        settings_true=args.settings_true,
+        root=root,
     )
 
-    conversation_df = pandas.concat([conversation_df, entry_df], ignore_index=True)
+    conversation_df["datetime"] = pandas.to_datetime(
+        conversation_df["datetime"],
+        format=datetime_format,
+        utc=True,
+        errors="raise",
+    )
+
+    oldest_history_datetime = conversation_df["datetime"].min()
+
+    conversation_df["embedding"] = conversation_df["embedding"].apply(
+        transformers.convert_pg_vector
+    )
+    
+    embedding_search_results_df = database.search_embeddings_db(
+        vector=transformers.convert_vector_pg(
+            vector=entry_dict["embedding"],
+        ),
+        history_filter=oldest_history_datetime,
+        settings_true=args.settings_true,
+        root=root,
+    )
+
+    embedding_search_results_df["content"] = embedding_search_results_df.apply(
+        lambda row: (
+            f"**Potential context from {row['author']} on {row['datetime']}, employ only if relevant**\n\n"
+            f"{row['content']}\n\n"
+            f"**End potential context from {row['author']} on {row['datetime']}**"
+        ),
+        axis=1,
+    )
+
+    conversation_df = pandas.concat(
+        [
+            embedding_search_results_df,
+            conversation_df, entry_df
+        ],
+        ignore_index=True
+    )
+
     conversation_df = conversation_df.replace({numpy.nan: None})
 
     user_indices = conversation_df[conversation_df["channel"] == "user"].index
@@ -162,33 +229,64 @@ def main():
         utc=True,
         errors="raise",
     )
-    conversation_df_today = conversation_df[
-        conversation_df["datetime"].dt.tz_convert(args.time_zone).dt.normalize() ==
-        pandas.Timestamp.now(tz=args.time_zone).normalize()
-    ]
 
-    conversation_list = conversation_df_today.to_dict(orient="records")
+    # conversation_df_today = conversation_df[
+    #     conversation_df["datetime"].dt.tz_convert(args.time_zone).dt.normalize() ==
+    #     pandas.Timestamp.now(tz=args.time_zone).normalize()
+    # ]
+
+    conversation_list = conversation_df.to_dict(orient="records")
 
     token_count, statements = model.submit_entry(
         entries=conversation_list,
         settings_true=args.settings_true,
         developer_true=args.developer_true,
         memories_entry=durable_memories,
-        max_tokens=args.max_tokens,
         temperature=args.temperature,
         top_p=args.top_p,
         root=root,
     )
 
+    entry_embedding = transformers.convert_vector_pg(
+        embedding.main(
+            text=entry_dict["content"],
+            settings_true=args.settings_true,
+            root=root,
+        )
+    )
+
     database.write_db(
         """
-        INSERT INTO threads (created_at, author, channel, type, content)
+        WITH inserted_embedding AS (
+            INSERT INTO embeddings (
+                embedding,
+                embedding_day,
+                embedding_month,
+                embedding_year
+            )
+            VALUES (
+                CAST(:embedding AS vector),
+                NULL,
+                NULL,
+                NULL
+            )
+            RETURNING embedding_id
+        )
+        INSERT INTO threads (
+            created_at,
+            author,
+            channel,
+            type,
+            content,
+            embedding
+        )
         VALUES (
             :created_at,
             (SELECT author_id FROM authors WHERE author = :author),
             (SELECT channel_id FROM channels WHERE channel = :channel),
             (SELECT type_id FROM types WHERE type = :type),
-            :content
+            :content,
+            (SELECT embedding_id FROM inserted_embedding)
         )
         """,
         {
@@ -197,7 +295,8 @@ def main():
             "channel": entry_dict["channel"],
             "type": entry_dict["type"],
             "content": entry_dict["content"],
-        }
+            "embedding": entry_embedding,
+        },
     )
 
     final_text = None
@@ -217,15 +316,45 @@ def main():
             if not author or not channel or not content_type or not content_value:
                 continue
 
+            content_embedding = transformers.convert_vector_pg(
+                embedding.main(
+                    text=content_value,
+                    settings_true=args.settings_true,
+                    root=root,
+                )
+            )
             database.write_db(
                 """
-                INSERT INTO threads (created_at, author, channel, type, content)
+                WITH inserted_embedding AS (
+                    INSERT INTO embeddings (
+                        embedding,
+                        embedding_day,
+                        embedding_month,
+                        embedding_year
+                    )
+                    VALUES (
+                        CAST(:embedding AS vector),
+                        NULL,
+                        NULL,
+                        NULL
+                    )
+                    RETURNING embedding_id
+                )
+                INSERT INTO threads (
+                    created_at,
+                    author,
+                    channel,
+                    type,
+                    content,
+                    embedding
+                )
                 VALUES (
                     :created_at,
                     (SELECT author_id FROM authors WHERE author = :author),
                     (SELECT channel_id FROM channels WHERE channel = :channel),
                     (SELECT type_id FROM types WHERE type = :type),
-                    :content
+                    :content,
+                    (SELECT embedding_id FROM inserted_embedding)
                 )
                 """,
                 {
@@ -234,7 +363,8 @@ def main():
                     "channel": channel,
                     "type": content_type,
                     "content": content_value,
-                }
+                    "embedding": content_embedding,
+                },
             )
 
             if channel == "final":

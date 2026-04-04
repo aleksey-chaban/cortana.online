@@ -1,4 +1,11 @@
 {
-    "model_location": "~/Models/openai/gpt-oss-20b",
-    "model_identity": "You are an advanced intelligence."
+    "paths": {
+        "model": "/Users/{NAME}/Models/openai/gpt-oss-20b",
+        "embedder": "/Users/{NAME}/Models/embeddinggemma"
+    },
+    "model_identity": "You are an advanced intelligence.",
+    "embedder_len": 1792,
+    "context_len": 5,
+    "history_len": 5,
+    "return_tokens": 2304
 }

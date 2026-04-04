@@ -2,3 +2,4 @@ mlx-lm
 openai-harmony
 sqlalchemy
 psycopg[binary]
+pandas

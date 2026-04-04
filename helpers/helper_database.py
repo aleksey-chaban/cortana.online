@@ -1,11 +1,6 @@
-"""PostgreSQL bootstrap and migration helpers"""
+"""PostgreSQL bootstrap helper"""
 
-from __future__ import annotations
-
-import csv
 import os
-from pathlib import Path
-from typing import Optional
 
 import psycopg
 from psycopg import sql
@@ -90,111 +85,110 @@ def create_tables(connection: psycopg.Connection) -> None:
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS authors (
-                author_id SERIAL PRIMARY KEY,
-                author TEXT NOT NULL UNIQUE
-            )
+            CREATE TABLE IF NOT EXISTS public.authors
+            (
+                author_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                author text NOT NULL UNIQUE
+            );
             """
         )
 
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS channels (
-                channel_id SMALLSERIAL PRIMARY KEY,
-                channel TEXT NOT NULL UNIQUE
-            )
+            CREATE TABLE IF NOT EXISTS public.channels
+            (
+                channel_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                channel text NOT NULL UNIQUE
+            );
             """
         )
 
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS types (
-                type_id SMALLSERIAL PRIMARY KEY,
-                type TEXT NOT NULL UNIQUE
-            )
-            """
-        )
-
-        cursor.execute(
-            sql.SQL(
-                """
-                CREATE TABLE IF NOT EXISTS e_year (
-                    e_year_id BIGSERIAL PRIMARY KEY,
-                    year TEXT NOT NULL UNIQUE,
-                    embedding vector({})
-                )
-                """
-            ).format(sql.SQL(str(EMBEDDING_DIM)))
-        )
-
-        cursor.execute(
-            sql.SQL(
-                """
-                CREATE TABLE IF NOT EXISTS e_month (
-                    e_month_id BIGSERIAL PRIMARY KEY,
-                    month TEXT NOT NULL,
-                    embedding vector({}),
-                    embedding_year BIGINT REFERENCES e_year(e_year_id),
-                    UNIQUE (month, embedding_year)
-                )
-                """
-            ).format(sql.SQL(str(EMBEDDING_DIM)))
-        )
-
-        cursor.execute(
-            sql.SQL(
-                """
-                CREATE TABLE IF NOT EXISTS embeddings (
-                    embedding_id BIGSERIAL PRIMARY KEY,
-                    embedding vector({}) NOT NULL,
-                    embedding_month BIGINT REFERENCES e_month(e_month_id),
-                    embedding_year BIGINT REFERENCES e_year(e_year_id)
-                )
-                """
-            ).format(sql.SQL(str(EMBEDDING_DIM)))
-        )
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS threads (
-                content_id BIGSERIAL PRIMARY KEY,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                author INTEGER NOT NULL REFERENCES authors(author_id),
-                channel SMALLINT NOT NULL REFERENCES channels(channel_id),
-                type SMALLINT NOT NULL REFERENCES types(type_id),
-                content TEXT NOT NULL,
-                embedding BIGINT REFERENCES embeddings(embedding_id),
-                e_month BIGINT REFERENCES e_month(e_month_id),
-                e_year BIGINT REFERENCES e_year(e_year_id)
-            )
+            CREATE TABLE IF NOT EXISTS public.types
+            (
+                type_id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                type text NOT NULL UNIQUE
+            );
             """
         )
 
         cursor.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_threads_created_at
-            ON threads (created_at)
+            CREATE TABLE IF NOT EXISTS public.e_year
+            (
+                e_year_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                year text NOT NULL UNIQUE,
+                embedding vector(768)
+            );
             """
         )
 
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS public.e_month
+            (
+                e_month_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                month text NOT NULL UNIQUE,
+                embedding vector(768),
+                embedding_year bigint REFERENCES public.e_year (e_year_id)
+            );
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.e_day
+            (
+                e_day_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                date date NOT NULL UNIQUE,
+                embedding vector(768),
+                embedding_month bigint REFERENCES public.e_month (e_month_id),
+                embedding_year bigint REFERENCES public.e_year (e_year_id)
+            );
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.embeddings
+            (
+                embedding_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                embedding vector(768) NOT NULL,
+                embedding_day bigint REFERENCES public.e_day (e_day_id),
+                embedding_month bigint REFERENCES public.e_month (e_month_id),
+                embedding_year bigint REFERENCES public.e_year (e_year_id)
+            );
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.threads
+            (
+                content_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                author integer NOT NULL REFERENCES public.authors (author_id),
+                channel smallint NOT NULL REFERENCES public.channels (channel_id),
+                type smallint NOT NULL REFERENCES public.types (type_id),
+                content text NOT NULL,
+                embedding bigint REFERENCES public.embeddings (embedding_id),
+                e_day bigint REFERENCES public.e_day (e_day_id),
+                e_month bigint REFERENCES public.e_month (e_month_id),
+                e_year bigint REFERENCES public.e_year (e_year_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_threads_author
-            ON threads (author)
-            """
-        )
+                ON public.threads (author);
 
-        cursor.execute(
-            """
             CREATE INDEX IF NOT EXISTS idx_threads_channel
-            ON threads (channel)
-            """
-        )
+                ON public.threads (channel);
 
-        cursor.execute(
-            """
+            CREATE INDEX IF NOT EXISTS idx_threads_created_at
+                ON public.threads (created_at);
+
             CREATE INDEX IF NOT EXISTS idx_threads_type
-            ON threads (type)
+                ON public.threads (type);
             """
         )
 
@@ -266,104 +260,15 @@ def _get_or_create_lookup_id(
     return int(row[0])
 
 
-def migrate_thread_csv(
-    connection: psycopg.Connection,
-    csv_path: str | Path,
-) -> int:
-    """Move legacy thread.csv rows into PostgreSQL threads"""
-
-    csv_file = Path(csv_path)
-    if not csv_file.exists():
-        raise FileNotFoundError(f"CSV file does not exist: {csv_file}")
-
-    imported_count = 0
-
-    with csv_file.open(mode="r", encoding="utf8", newline="") as file_handle:
-        reader = csv.DictReader(file_handle)
-
-        required_columns = {"datetime", "author", "channel", "type", "content"}
-        missing_columns = required_columns.difference(reader.fieldnames or [])
-        if missing_columns:
-            missing_csv = ", ".join(sorted(missing_columns))
-            raise ValueError(f"CSV is missing required columns: {missing_csv}")
-
-        with connection.cursor() as cursor:
-            for row in reader:
-                created_at = row["datetime"]
-                author_name = (row.get("author") or "").strip()
-                channel_name = (row.get("channel") or "").strip()
-                type_name = (row.get("type") or "").strip()
-                content = row["content"]
-
-                author_id: Optional[int] = None
-                if author_name:
-                    author_id = _get_or_create_lookup_id(
-                        connection=connection,
-                        table_name="authors",
-                        id_column="author_id",
-                        value_column="author",
-                        value=author_name,
-                    )
-
-                channel_id = _get_or_create_lookup_id(
-                    connection=connection,
-                    table_name="channels",
-                    id_column="channel_id",
-                    value_column="channel",
-                    value=channel_name,
-                )
-                type_id = _get_or_create_lookup_id(
-                    connection=connection,
-                    table_name="types",
-                    id_column="type_id",
-                    value_column="type",
-                    value=type_name,
-                )
-
-                cursor.execute(
-                    """
-                    INSERT INTO threads (
-                        created_at,
-                        author,
-                        channel,
-                        type,
-                        content,
-                        embedding,
-                        e_month,
-                        e_year
-                    )
-                    VALUES (%s, %s, %s, %s, %s, NULL, NULL, NULL)
-                    """,
-                    (created_at, author_id, channel_id, type_id, content),
-                )
-                imported_count += 1
-
-        connection.commit()
-
-    return imported_count
-
 
 def initialize_database_and_seed() -> None:
     """Set up PostgreSQL and seed core lookup values"""
 
     bootstrap_database()
-    root = os.getcwd()
-    csv_path = Path(
-        os.path.join(
-            root,
-            "storage",
-            "thread.csv"
-        )
-    )
 
     with get_connection(DB_NAME) as connection:
         seed_lookup_tables(connection)
 
-        if csv_path.exists():
-            imported_count = migrate_thread_csv(connection, csv_path)
-            print(f"Imported {imported_count} rows from {csv_path}")
-        else:
-            print(f"CSV file not found, skipping migration: {csv_path}")
 
 
 if __name__ == "__main__":

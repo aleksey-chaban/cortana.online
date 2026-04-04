@@ -1,14 +1,14 @@
 """Submit entry to model"""
 
 import os
-import json
-import pathlib
 import typing
 import datetime
 
 import mlx_lm
 
 import openai_harmony
+
+from app.src.helpers import loaders
 
 
 ##
@@ -303,7 +303,6 @@ def submit_entry(
     memories_entry: dict,
     developer_true: bool = False,
     settings_true: bool = False,
-    max_tokens: int = 1024,
     temperature: float = 0.35,
     top_p: float = 0.90,
     root: str = os.getcwd(),
@@ -312,37 +311,19 @@ def submit_entry(
     Submit entry to the model
     """
 
-    if settings_true:
-        with open(
-            os.path.join(
-                root,
-                "config",
-                "settings_true.json"
-            ),
-            mode="r",
-            encoding="utf-8"
-        ) as f:
-            settings = json.load(f)
-
-        model_location = settings.get("model_location")
-        model_identity = settings.get("model_identity")
-
-    else:
-        with open(
-            os.path.join(
-                root,
-                "config",
-                "settings.json"
-            ),
-            mode="r",
-            encoding="utf-8"
-        ) as f:
-            settings = json.load(f)
-
-        model_location = settings.get("model_location")
-        model_identity = settings.get("model_identity")
-
-    default_model = str(pathlib.Path(model_location).expanduser())
+    (
+        model_location,
+        _,
+        _,
+        model_identity,
+        _,
+        _,
+        _,
+        return_tokens,
+    ) = loaders.load_paths(
+        settings_true=settings_true,
+        root=root,
+    )
 
     system_entry = openai_harmony.SystemContent(
         model_identity=model_identity,
@@ -387,8 +368,8 @@ def submit_entry(
         memories_entry=memories_entry,
         developer_entry=developer_entry,
         entries=entries,
-        default_model=default_model,
-        max_tokens=max_tokens,
+        default_model=model_location,
+        max_tokens=return_tokens,
         temperature=temperature,
         top_p=top_p,
     )
