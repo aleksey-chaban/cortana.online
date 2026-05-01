@@ -6,6 +6,8 @@ import sys
 import pandas
 import numpy
 
+import openai_harmony
+
 from app.src.local import model
 from app.src.local import database
 from app.src.local import embedding
@@ -155,14 +157,9 @@ def main(
         errors="raise",
     )
 
-    # conversation_df_today = conversation_df[
-    #     conversation_df["datetime"].dt.tz_convert(TIMEZONE).dt.normalize() ==
-    #     pandas.Timestamp.now(tz=TIMEZONE).normalize()
-    # ]
-
     conversation_list = conversation_df.to_dict(orient="records")
 
-    token_count, statements = model.submit_entry(
+    statements = model.submit_entry(
         entries=conversation_list,
         memories_entry=durable_memories,
     )
@@ -220,7 +217,7 @@ def main(
     final_text = None
 
     for statement in statements:
-        if statement.get("role") != "assistant":
+        if statement.get("role") != openai_harmony.Role.ASSISTANT:
             continue
 
         author = MODEL_NAME
@@ -287,6 +284,6 @@ def main(
                 final_text = content_value
 
     if final_text:
-        return token_count, final_text
+        return final_text
 
     raise Exception("Cortana did not respond.")

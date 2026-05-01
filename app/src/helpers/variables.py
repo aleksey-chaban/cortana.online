@@ -51,6 +51,7 @@ try:
 except KeyError:
     sys.exit("Paths not found")
 
+SERVER_PATH = models.get("server")
 MODEL_PATH = models.get("model")
 EMBEDDER_PATH = models.get("embedder")
 

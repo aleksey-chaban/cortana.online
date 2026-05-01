@@ -32,10 +32,7 @@ if __name__ == "__main__":
 
     ENTRY = args.entry
 
-    (
-        token_count,
-        received_statement
-    ) = orchestrator.main(
+    received_statement = orchestrator.main(
         author=AUTHOR,
         entry=ENTRY,
     )
