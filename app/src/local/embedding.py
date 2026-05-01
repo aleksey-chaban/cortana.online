@@ -7,7 +7,6 @@ import subprocess
 from app.src.helpers.variables import (
     EMBED_PYTHON,
     EMBED_SCRIPT,
-    EMBEDDER_MAX,
 )
 
 
