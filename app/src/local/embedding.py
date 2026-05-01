@@ -1,11 +1,14 @@
 """Process strings into embeddings"""
 
-import os
 import json
 import math
 import subprocess
 
-from app.src.helpers import loaders
+from app.src.helpers.variables import (
+    EMBED_PYTHON,
+    EMBED_SCRIPT,
+    EMBEDDER_MAX,
+)
 
 
 def split_text(
@@ -81,13 +84,11 @@ def mean_vectors(
 
 def get_token_count(
     text: str,
-    embed_python: str,
-    embed_script: str,
 ) -> int:
     """Send token count request"""
 
     result = subprocess.run(
-        [embed_python, embed_script],
+        [EMBED_PYTHON, EMBED_SCRIPT],
         input=json.dumps(
             {
                 "text": text,
@@ -106,13 +107,11 @@ def get_token_count(
 
 def get_embeddings(
     text: str,
-    embed_python: str,
-    embed_script: str,
 ) -> list[float]:
     """Send embedding request"""
 
     result = subprocess.run(
-        [str(embed_python), str(embed_script)],
+        [str(EMBED_PYTHON), str(EMBED_SCRIPT)],
         input=json.dumps(
             {
                 "text": text,
@@ -131,35 +130,16 @@ def get_embeddings(
 
 def main(
     text: str,
-    settings_true: bool = False,
-    root: str = os.getcwd(),
 ):
     """Return embedding"""
 
-    (
-        _,
-        embed_python,
-        embed_script,
-        _,
-        embedder_max,
-        _,
-        _,
-        _,
-    ) = loaders.load_paths(
-        settings_true=settings_true,
-        root=root,
-    )
-
     token_count = get_token_count(
         text=text,
-        embed_python=embed_python,
-        embed_script=embed_script,
     )
 
     text_list = split_text(
         text=text,
         token_count=token_count,
-        max_tokens=embedder_max,
     )
 
     embed_list = []
@@ -167,14 +147,12 @@ def main(
     for text_str in text_list:
         text_str_embed = get_embeddings(
             text=text_str,
-            embed_python=embed_python,
-            embed_script=embed_script,
         )
 
         embed_list.append(text_str_embed)
 
     output = mean_vectors(
-        vectors=embed_list
+        vectors=embed_list,
     )
 
     return output

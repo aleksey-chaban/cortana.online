@@ -1,3 +1,5 @@
+app/gui/*
+
 legacy/
 storage/
 

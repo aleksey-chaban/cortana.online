@@ -1,11 +1,19 @@
 {
+    "statements": {
+        "custom_developer": false,
+        "custom_profile": false
+    },
     "paths": {
         "model": "/Users/{NAME}/Models/openai/gpt-oss-20b",
         "embedder": "/Users/{NAME}/Models/embeddinggemma"
     },
+    "model_name": "Model",
     "model_identity": "You are an advanced intelligence.",
-    "embedder_len": 1792,
+    "embedder_max": 1792,
     "context_len": 5,
     "history_len": 5,
-    "return_tokens": 2304
+    "return_tokens": 2304,
+    "temperature": 0.35,
+    "top_p": 0.90,
+    "timezone": "US/Eastern"
 }

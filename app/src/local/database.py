@@ -1,19 +1,19 @@
 """Database interactions"""
 
-import os
 import datetime
 
 import pandas
 import sqlalchemy
 
-from app.src.helpers import loaders
-
-
-HOST = os.environ["PGHOST"]
-PORT = os.environ["PGPORT"]
-DATABASE = os.environ["PGDATABASE"]
-USER = os.environ["PGUSER"]
-PASSWORD = os.environ["PGPASSWORD"]
+from app.src.helpers.variables import (
+    HOST,
+    PORT,
+    DATABASE,
+    USER,
+    PASSWORD,
+    HISTORY_LEN,
+    CONTEXT_LEN,
+)
 
 engine = sqlalchemy.create_engine(
     (
@@ -26,31 +26,15 @@ engine = sqlalchemy.create_engine(
 
 def read_db(
     query: str,
-    settings_true: bool = False,
-    root: str = os.getcwd(),
 ) -> pandas.DataFrame:
     """Return database query results"""
-
-    (
-        _,
-        _,
-        _,
-        _,
-        _,
-        _,
-        history_len,
-        _,
-    ) = loaders.load_paths(
-        settings_true=settings_true,
-        root=root,
-    )
 
     df = pandas.read_sql_query(
         sqlalchemy.text(query),
         engine,
         params={
-            "limit": history_len,
-        }
+            "limit": HISTORY_LEN,
+        },
     )
     return df
 
@@ -58,24 +42,8 @@ def read_db(
 def search_embeddings_db(
     vector: str,
     history_filter: datetime.datetime,
-    settings_true: bool = False,
-    root: str = os.getcwd(),
 ) -> pandas.DataFrame:
     """Return closest stored embeddings"""
-
-    (
-        _,
-        _,
-        _,
-        _,
-        _,
-        context_len,
-        _,
-        _,
-    ) = loaders.load_paths(
-        settings_true=settings_true,
-        root=root,
-    )
 
     query = sqlalchemy.text(
         """
@@ -104,7 +72,7 @@ def search_embeddings_db(
         params={
             "embedding": vector,
             "history_filter": history_filter,
-            "limit": context_len,
+            "limit": CONTEXT_LEN,
         },
     )
 

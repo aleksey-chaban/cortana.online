@@ -1,5 +1,6 @@
 mlx-lm
 openai-harmony
+dotenv
 sqlalchemy
 psycopg[binary]
 pandas

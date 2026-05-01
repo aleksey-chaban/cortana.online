@@ -1,6 +1,5 @@
 """Submit entry to model"""
 
-import argparse
 import os
 import sys
 
@@ -10,120 +9,40 @@ import numpy
 from app.src.local import model
 from app.src.local import database
 from app.src.local import embedding
-from app.src.helpers import loaders
 from app.src.helpers import transformers
 
-##
-## Inputs
-##
+from app.src.helpers.variables import (
+    ROOT,
+    CUSTOM_PROFILE,
+    RETURN_TOKENS,
+    MODEL_NAME,
+)
 
 
-def parse_args() -> argparse.Namespace:
-    """
-    Parse command-line arguments.
-    """
-
-    parser = argparse.ArgumentParser(
-        description="Submit entry to model."
-    )
-
-    parser.add_argument(
-        "--entry",
-        type=str,
-        required=True,
-        help="User entry."
-    )
-
-    parser.add_argument(
-        "--author",
-        type=str,
-        default="Anonymous",
-        help="Source of the entry.",
-    )
-
-    parser.add_argument(
-        "--settings-true",
-        action="store_true",
-        help="Employ true settings.",
-    )
-
-    parser.add_argument(
-        "--developer-true",
-        action="store_true",
-        help="Employ true developer entry.",
-    )
-
-    parser.add_argument(
-        "--memories-true",
-        action="store_true",
-        help="Employ memories entry.",
-    )
-
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.35,
-        help="Sampling temperature.",
-    )
-
-    parser.add_argument(
-        "--top-p",
-        type=float,
-        default=0.90,
-        help="Top-p nucleus sampling.",
-    )
-
-    parser.add_argument(
-        "--time-zone",
-        type=str,
-        default="US/Eastern",
-        help="Set time zone to consider for daily memories."
-    )
-
-    return parser.parse_args()
-
-##
-## End inputs
-##
-
-def main():
+def main(
+    author: str,
+    entry: str,
+):
     """Submit entry to model."""
 
     datetime_format = "%Y-%m-%dT%H:%M:%S.%fZ"
-    model_name = os.getenv("AINAME")
-    args = parse_args()
-    root = os.getcwd()
-
-    (
-        _,
-        _,
-        _,
-        _,
-        _,
-        _,
-        _,
-        return_tokens,
-    ) = loaders.load_paths(
-        settings_true=args.settings_true,
-        root=root,
-    )
 
     config = os.path.join(
-        root,
+        ROOT,
         "config"
     )
 
     durable_memories = {
-        "author": args.author,
+        "author": author,
         "channel": "user",
         "type": "text",
         "content": ""
     }
 
-    if args.memories_true:
+    if CUSTOM_PROFILE:
         memories = os.path.join(
             config,
-            f"durable_memories-{args.author}.txt"
+            f"durable_memories-{author}.txt"
         )
 
         try:
@@ -132,24 +51,24 @@ def main():
         except FileNotFoundError:
             sys.exit("Author does not exist.")
 
-    if return_tokens > 512:
-        return_tokens = return_tokens - 256
+    token_limit = RETURN_TOKENS
+
+    if token_limit > 512:
+        token_limit -= 256
 
     durable_memories["content"] = (
-            f"**Please limit your responses to { return_tokens }**\n\n"
+            f"**Please limit your responses to {token_limit}**\n\n"
             f"{durable_memories['content']}\n\n"
         )
 
     entry_dict = {
         "datetime": pandas.Timestamp.now(tz="utc").strftime(datetime_format),
-        "author": args.author,
+        "author": author,
         "channel": "user",
         "type": "text",
-        "content": args.entry,
+        "content": entry,
         "embedding": embedding.main(
-            text=args.entry,
-            settings_true=args.settings_true,
-            root=root,
+            text=entry,
         )
     }
 
@@ -172,8 +91,6 @@ def main():
         ORDER BY t.content_id DESC
         LIMIT :limit
         """,
-        settings_true=args.settings_true,
-        root=root,
     )
 
     conversation_df["datetime"] = pandas.to_datetime(
@@ -188,14 +105,21 @@ def main():
     conversation_df["embedding"] = conversation_df["embedding"].apply(
         transformers.convert_pg_vector
     )
-    
+
+    conversation_df["content"] = conversation_df.apply(
+        lambda row: (
+            f"**Memory of {row['author']} on {row['datetime']}**\n\n"
+            f"{row['content']}\n\n"
+            f"**End memory of {row['author']} on {row['datetime']}**"
+        ),
+        axis=1,
+    )
+
     embedding_search_results_df = database.search_embeddings_db(
         vector=transformers.convert_vector_pg(
             vector=entry_dict["embedding"],
         ),
         history_filter=oldest_history_datetime,
-        settings_true=args.settings_true,
-        root=root,
     )
 
     embedding_search_results_df["content"] = embedding_search_results_df.apply(
@@ -210,7 +134,8 @@ def main():
     conversation_df = pandas.concat(
         [
             embedding_search_results_df,
-            conversation_df, entry_df
+            conversation_df,
+            entry_df
         ],
         ignore_index=True
     )
@@ -231,27 +156,20 @@ def main():
     )
 
     # conversation_df_today = conversation_df[
-    #     conversation_df["datetime"].dt.tz_convert(args.time_zone).dt.normalize() ==
-    #     pandas.Timestamp.now(tz=args.time_zone).normalize()
+    #     conversation_df["datetime"].dt.tz_convert(TIMEZONE).dt.normalize() ==
+    #     pandas.Timestamp.now(tz=TIMEZONE).normalize()
     # ]
 
     conversation_list = conversation_df.to_dict(orient="records")
 
     token_count, statements = model.submit_entry(
         entries=conversation_list,
-        settings_true=args.settings_true,
-        developer_true=args.developer_true,
         memories_entry=durable_memories,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        root=root,
     )
 
     entry_embedding = transformers.convert_vector_pg(
         embedding.main(
             text=entry_dict["content"],
-            settings_true=args.settings_true,
-            root=root,
         )
     )
 
@@ -291,7 +209,7 @@ def main():
         """,
         {
             "created_at": entry_dict["datetime"],
-            "author": args.author,
+            "author": author,
             "channel": entry_dict["channel"],
             "type": entry_dict["type"],
             "content": entry_dict["content"],
@@ -305,7 +223,7 @@ def main():
         if statement.get("role") != "assistant":
             continue
 
-        author = model_name
+        author = MODEL_NAME
         channel = statement.get("channel")
         contents = statement.get("content", [])
 
@@ -319,8 +237,6 @@ def main():
             content_embedding = transformers.convert_vector_pg(
                 embedding.main(
                     text=content_value,
-                    settings_true=args.settings_true,
-                    root=root,
                 )
             )
             database.write_db(
@@ -371,11 +287,6 @@ def main():
                 final_text = content_value
 
     if final_text:
-        print(final_text)
-        print(f"Conversation token count: {token_count}")
-    else:
-        raise Exception("Cortana did not respond.")
+        return token_count, final_text
 
-
-if __name__ == "__main__":
-    main()
+    raise Exception("Cortana did not respond.")

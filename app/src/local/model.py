@@ -8,7 +8,15 @@ import mlx_lm
 
 import openai_harmony
 
-from app.src.helpers import loaders
+from app.src.helpers.variables import (
+    ROOT,
+    CUSTOM_DEVELOPER,
+    MODEL_PATH,
+    MODEL_IDENTITY,
+    RETURN_TOKENS,
+    TEMPERATURE,
+    TOP_P
+)
 
 
 ##
@@ -27,7 +35,7 @@ def build_presets_conversation(
     conversation.append(
         openai_harmony.Message.from_role_and_content(
             openai_harmony.Role.SYSTEM,
-            system_entry
+            system_entry,
         )
     )
 
@@ -63,7 +71,7 @@ def build_user_conversation(
             conversation.append(
                 openai_harmony.Message.from_role_and_content(
                     openai_harmony.Role.USER,
-                    user_entry
+                    user_entry,
                 )
             )
 
@@ -202,10 +210,6 @@ def run_entry(
     developer_entry: openai_harmony.DeveloperContent,
     memories_entry: dict,
     entries: list[dict],
-    default_model: str,
-    max_tokens: int,
-    temperature: float,
-    top_p: float,
 ) -> list:
     """
     Submit a single query through the model
@@ -239,7 +243,7 @@ def run_entry(
             case "analysis" | "final":
                 conversation = build_model_conversation(
                     conversation=conversation,
-                    model_name=default_model,
+                    model_name=MODEL_PATH,
                     model_entry=content,
                     model_channel=channel,
             )
@@ -259,11 +263,11 @@ def run_entry(
 
     token_count = len(prefill_ids)
 
-    model, tokenizer = mlx_lm.load(default_model)
+    model, tokenizer = mlx_lm.load(MODEL_PATH)
     harmony_entry = decode_prefill_ids(tokenizer, prefill_ids)
     sampler = mlx_lm.sample_utils.make_sampler(
-        temp=temperature,
-        top_p=top_p,
+        temp=TEMPERATURE,
+        top_p=TOP_P,
     )
 
     completion_ids: list[int] = []
@@ -272,7 +276,7 @@ def run_entry(
         model,
         tokenizer,
         prompt=harmony_entry,
-        max_tokens=max_tokens,
+        max_tokens=RETURN_TOKENS,
         sampler=sampler,
     ):
 
@@ -301,32 +305,13 @@ def run_entry(
 def submit_entry(
     entries: list[dict],
     memories_entry: dict,
-    developer_true: bool = False,
-    settings_true: bool = False,
-    temperature: float = 0.35,
-    top_p: float = 0.90,
-    root: str = os.getcwd(),
 ) -> list:
     """
     Submit entry to the model
     """
 
-    (
-        model_location,
-        _,
-        _,
-        model_identity,
-        _,
-        _,
-        _,
-        return_tokens,
-    ) = loaders.load_paths(
-        settings_true=settings_true,
-        root=root,
-    )
-
     system_entry = openai_harmony.SystemContent(
-        model_identity=model_identity,
+        model_identity=MODEL_IDENTITY,
         reasoning_effort=openai_harmony.ReasoningEffort.LOW,
         conversation_start_date=datetime.datetime.now().date().isoformat(),
         knowledge_cutoff=None,
@@ -334,24 +319,23 @@ def submit_entry(
         tools=None,
     )
 
-    if developer_true:
+    with open(
+        os.path.join(
+            ROOT,
+            "config",
+            "developer_entry.txt"
+        ),
+        mode="r",
+        encoding="utf-8"
+    ) as f:
+        developer_instructions = f.read()
+
+    if CUSTOM_DEVELOPER:
         with open(
             os.path.join(
-                root,
+                ROOT,
                 "config",
                 "developer_entry_true.txt"
-            ),
-            mode="r",
-            encoding="utf-8"
-        ) as f:
-            developer_instructions = f.read()
-
-    else:
-        with open(
-            os.path.join(
-                root,
-                "config",
-                "developer_entry.txt"
             ),
             mode="r",
             encoding="utf-8"
@@ -368,10 +352,6 @@ def submit_entry(
         memories_entry=memories_entry,
         developer_entry=developer_entry,
         entries=entries,
-        default_model=model_location,
-        max_tokens=return_tokens,
-        temperature=temperature,
-        top_p=top_p,
     )
 
     return [

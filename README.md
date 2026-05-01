@@ -19,7 +19,6 @@ export PGPORT=5432
 export PGDATABASE=model
 export PGUSER=postgres
 export PGPASSWORD={your_password}
-export AINAME=model
 
 Press control+o followed by control+x
 
@@ -73,14 +72,13 @@ git clone https://github.com/openai/gpt-oss.git
 cd ~/gpt-oss
 GPTOSS_BUILD_METAL=1 pip install -e ".[metal]"
 
-Clone the repository and open it in the integrated terminal within VS Code - Run the trial script to receive an output
+Clone the repository and open it in the integrated terminal within VS Code
 source .venv/bin/activate
-python3 cli/cli_trial "Hello, world!"
 
 Run the helper script to set up the schema for PostgreSQL
 python3 helpers/helper_database.py
 
-Optionally, modify config/durable_memories-Anonymous.txt
+Optionally, modify config/durable_memories-Chief.txt
 
 Run the script to receive and store an output
-Python3 cli/cli_entry.py —entry “Hello, world!”
+Python3 run.py “Hello, world!”
