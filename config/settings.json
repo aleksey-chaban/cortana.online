@@ -3,8 +3,11 @@
         "custom_developer": false,
         "custom_profile": false
     },
+    "servers": {
+        "model": "http://127.0.0.1:8080/v1",
+        "embedder": "http://127.0.0.1:8081/v1"
+    },
     "paths": {
-        "server": "http://localhost:8080/v1",
         "model": "/Users/{NAME}/Models/openai/gpt-oss-20b",
         "embedder": "/Users/{NAME}/Models/embeddinggemma"
     },

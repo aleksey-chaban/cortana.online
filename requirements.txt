@@ -5,3 +5,6 @@ dotenv
 sqlalchemy
 psycopg[binary]
 pandas
+flask
+gunicorn
+sentence-transformers

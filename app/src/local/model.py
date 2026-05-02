@@ -9,7 +9,7 @@ import openai
 from app.src.helpers.variables import (
     ROOT,
     CUSTOM_DEVELOPER,
-    SERVER_PATH,
+    MODEL_SERVER_PATH,
     MODEL_PATH,
     MODEL_IDENTITY,
     RETURN_TOKENS,
@@ -214,7 +214,7 @@ def run_entry(
             )
 
     client = openai.OpenAI(
-        base_url=SERVER_PATH,
+        base_url=MODEL_SERVER_PATH,
         api_key="o"
     )
 

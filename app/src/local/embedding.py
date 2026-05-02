@@ -2,11 +2,10 @@
 
 import json
 import math
-import subprocess
+import urllib.request
 
 from app.src.helpers.variables import (
-    EMBED_PYTHON,
-    EMBED_SCRIPT,
+    EMBEDDER_SERVER_PATH,
 )
 
 
@@ -15,9 +14,7 @@ def split_text(
         token_count: int,
         max_tokens: int = 1792
 ) -> list[str]:
-    """
-    Split text into equal parts
-    """
+    """Split text into equal parts"""
 
     split_str = [ text ]
 
@@ -35,12 +32,10 @@ def split_text(
 def normalize_vector(
     vector: list[float]
 ) -> list[float]:
-    """
-    Scale a vector to standard length
-    """
+    """Scale a vector to standard length"""
 
     norm = math.sqrt(
-        sum(value * value for value in vector)
+        sum( value * value for value in vector )
     )
 
     if norm == 0.0:
@@ -86,22 +81,17 @@ def get_token_count(
 ) -> int:
     """Send token count request"""
 
-    result = subprocess.run(
-        [EMBED_PYTHON, EMBED_SCRIPT],
-        input=json.dumps(
-            {
-                "text": text,
-                "count_true": True
-            }
-        ),
-        text=True,
-        capture_output=True,
-        check=True,
+    request = urllib.request.Request(
+        url=f"{EMBEDDER_SERVER_PATH}/get_token_count",
+        data=json.dumps({"text": text}).encode("utf8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
 
-    return int(
-        result.stdout.strip()
-    )
+    with urllib.request.urlopen(request) as response:
+        payload = json.loads(response.read().decode("utf8"))
+
+    return int(payload["token_count"])
 
 
 def get_embeddings(
@@ -109,22 +99,17 @@ def get_embeddings(
 ) -> list[float]:
     """Send embedding request"""
 
-    result = subprocess.run(
-        [str(EMBED_PYTHON), str(EMBED_SCRIPT)],
-        input=json.dumps(
-            {
-                "text": text,
-                "count_true": False
-            }
-        ),
-        text=True,
-        capture_output=True,
-        check=True,
+    request = urllib.request.Request(
+        url=f"{EMBEDDER_SERVER_PATH}/get_embeddings",
+        data=json.dumps({"text": text}).encode("utf8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
 
-    return json.loads(
-        result.stdout.strip()
-    )
+    with urllib.request.urlopen(request) as response:
+        payload = json.loads(response.read().decode("utf8"))
+
+    return payload["embedding"]
 
 
 def main(

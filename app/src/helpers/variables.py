@@ -47,11 +47,18 @@ CUSTOM_DEVELOPER = models.get("custom_developer")
 CUSTOM_PROFILE = models.get("custom_profile")
 
 try:
+    servers = settings.get("servers")
+except KeyError:
+    sys.exit("Servers not found")
+
+MODEL_SERVER_PATH = servers.get("model")
+EMBEDDER_SERVER_PATH = servers.get("embedder")
+
+try:
     models = settings.get("paths")
 except KeyError:
     sys.exit("Paths not found")
 
-SERVER_PATH = models.get("server")
 MODEL_PATH = models.get("model")
 EMBEDDER_PATH = models.get("embedder")
 

@@ -80,5 +80,12 @@ python3 helpers/helper_database.py
 
 Optionally, modify config/durable_memories-Chief.txt
 
+Start the model server
+mlx_lm.server --model Models/openai/gpt-oss-20b --prompt-cache-size 0
+
+Start the embedder server
+Open the app/src/servers/ directory in the integrated terminal within VS Code
+gunicorn server_embed_true:server_embed_api --bind 127.0.0.1:8081 --workers 1 --threads 4
+
 Run the script to receive and store an output
 Python3 run.py “Hello, world!”
